@@ -1,0 +1,349 @@
+---
+title: "152_project code"
+author: "Lucy Wang, Michelle Seo"
+date: "5/3/2020"
+output: pdf_document
+---
+
+
+
+```{r setup, include=FALSE}
+options(warn = -1)
+library(readr)
+library(plyr)
+library(ggplot2)
+library(survey)
+```
+
+##EDA
+```{r include=FALSE, comment=NA}
+options(warn = -1)
+cols13_14 <- c("NAME","STRATUM", "OTHERSTAFF", "TOTALSTAFF", "ASSAULTCORR", "ASSAULTOTRSTAFFF", "DEATHSTAFFYN", "ADPF", "ADP", "DESIGNWT", "FINALWT")
+
+cols15_18 <- c("NAME","STRATUM", "TOTALSTAFF", "CORRSTAFF", "CORRSTAFFF", "OTHERSTAFF", "OTHERSTAFFF","OTHERSTAFFM","TOTPOP", "ADPF", "ADP", "DESIGNWT", "FINALWT")
+
+clean <- function(file, cols) {
+  dat <-read_tsv(file)
+  dict <- c("FACLNAME"="NAME","STRATUMNEW" = "STRATUM", "FACILITY"="NAME","S4QIV1C"="TOTALSTAFF", "BJSW"="FINALWT", "WEIGHT"="DESIGNWT")
+  dat <- rename(dat, dict)
+  dat <- dat[, cols]
+  dat$year <- rep(substring(file, 6, 9), nrow(dat))
+  return (dat)
+}
+
+
+files <- list.files(path="Data", pattern="*.tsv", full.names=TRUE, recursive=FALSE)
+files13_14 <- files[1:2]
+files15_18 <- files[3:6]
+
+data13_14 <- data.frame()
+for (file in files13_14){
+  dat <- clean(file, cols13_14)
+  data13_14 <- rbind(data13_14, dat)
+}
+
+#write.csv(dataset,"dataset.csv")
+#dataset
+
+
+data15_18 <- data.frame()
+for (file in files15_18){
+  dat <- clean(file, cols15_18)
+  data15_18 <- rbind(data15_18, dat)
+}
+
+cols <- intersect(names(data13_14), names(data15_18))
+data13_18 <- rbind(data13_14[,cols], data15_18[,cols])
+write.csv(data13_14, "data13_14.csv")
+write.csv(data15_18, "data15_18.csv")
+write.csv(data13_18, "data13_18.csv")
+
+
+```
+
+##Plots/EDA
+```{r}
+library(dplyr)
+##filling in total_staff male/female calculation
+##invalid data = 0 staff members
+data15_18$TOTALSTAFFF <- data15_18$CORRSTAFFF+data15_18$OTHERSTAFFF 
+data15_18$TOTALSTAFFM <- data15_18$TOTALSTAFF - data15_18$TOTALSTAFFF
+data15_18$STRATUM <- as.factor(data15_18$STRATUM)
+
+summary(data15_18$TOTALSTAFF)
+summary(data15_18$CORRSTAFFF)
+summary(data15_18$OTHERSTAFFF)
+
+indices <- which(data15_18$TOTALSTAFF==0)
+
+data15_18$ratio <- data15_18$TOTALSTAFFM/data15_18$TOTALSTAFFF 
+data15_18$ratio[data15_18$ratio<=0 | is.infinite(data15_18$ratio)] <- NA
+
+ratio <- data15_18$ratio[is.na(data15_18$ratio)==F]
+ratio <- ratio[is.infinite(ratio)==F]
+
+ggplot()+
+geom_histogram(aes(ratio), bins = 30, fill="#4281a4")+
+  ggtitle("2015-2018 Male to Female ratio of Jail Staff")+
+  geom_vline(aes(xintercept=mean(ratio)))+
+  scale_x_continuous(breaks = seq(0,25, 2.5))
+
+data15_18 %>% group_by(STRATUM) %>% summarise(ct = n(), avg=mean(ratio, na.rm = T))
+
+mean(ratio)
+
+
+
+sts <- boxplot.stats(data15_18$CORRSTAFF)$stats
+## Correctional Staff
+ggplot(data15_18, aes(x=STRATUM, y=CORRSTAFF)) + 
+    geom_boxplot(aes(group=STRATUM),fill="#9cafb7")+
+    scale_x_discrete(breaks = seq(1,12,1))+
+    coord_cartesian(ylim = c(sts*1.05,sts/1.05))+
+  ggtitle("2015-2018 Correctional Staff Distributions by Stratum")
+
+## Other Staff
+sts <- boxplot.stats(data15_18$OTHERSTAFF)$stats
+##Gender comparison per type
+ggplot(data15_18, aes(x=STRATUM, y=OTHERSTAFF)) + 
+    geom_boxplot(aes(group=STRATUM), fill="#9cafb7")+
+    scale_x_discrete(breaks = seq(1,12,1))+
+    coord_cartesian(ylim = c(sts*1.05,sts/1.05))+
+  ggtitle("2015-2018 Other Staff Distributions by Stratum")
+
+```
+##ADP/Staff Ratio
+```{r}
+
+
+data13_18$STRATUM <- sapply(data13_18$STRATUM, round)
+data13_18$year <- as.factor(data13_18$year)
+data13_18$STRATUM <- as.factor(data13_18$STRATUM)
+
+##inmate to staff ratio
+data13_18$ratios2 <- data13_18$ADP/data13_18$TOTALSTAFF
+data13_18$ratios2[is.infinite(data13_18$ratios2) | data13_18$ratios2 <=0] <- NA
+
+grpRatio <- data13_18 %>% group_by(year, STRATUM) %>% summarise(avg = mean(ratios2, na.rm=T))
+grpRatio <- grpRatio[is.na(grpRatio$avg)==F,]
+
+ggplot(grpRatio, aes(year, avg))+
+  geom_line(aes(group = STRATUM, color=STRATUM))+
+  geom_point(size = 1)+
+  ggtitle("Average Inmate to Staff ratio by year and Stratum")+
+  xlab("Year")+ 
+  ylab("Ratio")
+
+grpRatio
+```
+```{r}
+data15_18$ratios3 <- data15_18$ADP/data15_18$CORRSTAFF
+data15_18$ratios3[is.infinite(data15_18$ratios3) | data15_18$ratios3 <=0] <- NA
+
+grpRatio <- data15_18 %>% group_by(year, STRATUM) %>% summarise(avg = mean(ratios3, na.rm=T))
+grpRatio <- grpRatio[is.na(grpRatio$avg)==F,]
+grpRatio
+```
+
+##Inmate staff Ratio
+```{r}
+##Inmate to staff
+ratio_fn <- function(dat) {
+  ##Returns Ratio and SE
+strat_design<-svydesign(ids = ~1, strata = ~STRATUM, weights=~FINALWT, data = dat)
+r <- svyratio(~ADP, ~TOTALSTAFF, strat_design, na.rm=T)
+c(unname(r$ratio)[[1]], sqrt(unname(r$var)[[1]]))
+}
+
+yrs <- as.character(2013:2018)
+
+estimates <- data.frame()
+
+for (i in 1:6) {
+  yr <- yrs[i]
+  dat <- data13_18[data13_18$year==yr,]
+  estimates <- rbind(estimates, ratio_fn(dat))
+}
+
+colnames(estimates) <- c("Ratio", "SE")
+estimates$year <- yrs
+
+estimates
+
+ggplot(estimates, aes(x = year, y = Ratio)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymax = Ratio+1.96*SE, ymin = Ratio-1.96*SE))+
+  ggtitle("2013-18 Confidence intervals for Inmate to Staff Ratios")
+
+estimates <- estimates[c("year","Ratio","SE")]
+estimates
+```
+
+##Functions for estimation
+```{r}
+yrs <- as.character(2015:2018)
+##Female to Male
+estimates <- data.frame()
+
+ratio_fn2 <- function(dat) {
+  ##Returns Ratio and SE
+strat_design<-svydesign(ids = ~1, strata = ~STRATUM, weights=~FINALWT, data = dat)
+r <- svyratio(~TOTALSTAFFM, ~TOTALSTAFFF, strat_design, na.rm=T)
+c(unname(r$ratio)[[1]], sqrt(unname(r$var)[[1]]))
+}
+
+for (i in 1:4) {
+  yr <- yrs[i]
+  dat <- data15_18[data15_18$year==yr,]
+  estimates <- rbind(estimates, ratio_fn2(dat))
+}
+
+colnames(estimates) <- c("Ratio", "SE")
+estimates$year <- yrs
+
+
+ggplot(estimates, aes(x = year, y = Ratio)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymax = Ratio+1.96*SE, ymin = Ratio-1.96*SE))+
+  ggtitle("2015-18 Confidence intervals for Male to Female Staff")
+
+estimates <- estimates[c("year","Ratio","SE")]
+data15_18$year <- as.factor(data15_18$year)
+summary(aov(ratio~year, data15_18))
+
+```
+
+
+##t-test
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+```
+
+```{r}
+#Inmate to staff
+dat <- data15_18[data15_18$STRATUM != 1 & data15_18$STRATUM != 2,]
+summary(aov(ratio~STRATUM, dat))
+inm_staff<-data13_18[data13_18$year != "2013" & data13_18$year != "2014",]
+
+
+t_test <- inm_staff %>% pairwise_t_test(ratios2~STRATUM, pool.sd = F)
+t_test <- t_test[t_test$p.adj < 0.05,]
+t_test <- t_test[t_test$group1!=1 & t_test$group2 !=12,c("group1", "group2","p.adj")]
+head(t_test)
+```
+## Q1Q2
+```{r}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(survey)
+```
+
+#Loading data
+```{r}
+fifteen_eighteen_data <- read.csv("data15_18.csv")
+thirteen_fourteen_data <- read.csv("data13_14.csv")
+total_data <- read.csv("data13_18.csv")
+```
+
+#Individual Years
+```{r}
+thirteen_data <- total_data %>% filter(year==2013)
+fourteen_data <- total_data %>% filter(year==2014)
+fifteen_data <- total_data %>% filter(year==2015)
+sixteen_data <- total_data %>% filter(year==2016)
+seventeen_data <- total_data %>% filter(year==2017)
+eighteen_data <- total_data %>% filter(year==2018)
+```
+
+#Total staff values using survey
+```{r}
+survey_design13 <- svydesign(data=thirteen_data, ids=~1, weights=thirteen_data$FINALWT, strata=thirteen_data$STRATUM)
+svytotal(thirteen_data$TOTALSTAFF,design=survey_design13)
+survey_design14 <- svydesign(data=fourteen_data, ids=~1, weights=fourteen_data$FINALWT, strata=fourteen_data$STRATUM)
+svytotal(fourteen_data$TOTALSTAFF,design=survey_design14)
+survey_design15 <- svydesign(data=fifteen_data, ids=~1, weights=fifteen_data$FINALWT, strata=fifteen_data$STRATUM)
+svytotal(fifteen_data$TOTALSTAFF,design=survey_design15)
+survey_design16 <- svydesign(data=sixteen_data, ids=~1, weights=sixteen_data$FINALWT, strata=sixteen_data$STRATUM)
+svytotal(sixteen_data$TOTALSTAFF,design=survey_design16)
+survey_design17 <- svydesign(data=seventeen_data, ids=~1, weights=seventeen_data$FINALWT, strata=seventeen_data$STRATUM)
+svytotal(seventeen_data$TOTALSTAFF,design=survey_design17)
+survey_design18 <- svydesign(data=eighteen_data, ids=~1, weights=eighteen_data$FINALWT, strata=eighteen_data$STRATUM)
+svytotal(eighteen_data$TOTALSTAFF,design=survey_design18)
+```
+
+#Assault Analysis for years 13-14
+```{r}
+thirteendata <- thirteen_fourteen_data %>% filter(year==2013)
+fourteendata <- thirteen_fourteen_data %>% filter(year==2014)
+thirteensurvey <- svydesign(data=thirteendata, ids=~1, weights=thirteendata$FINALWT, strata=thirteendata$STRATUM)
+svytotal(~ASSAULTCORR, design=thirteensurvey)
+svytotal(~ASSAULTOTRSTAFFF, design=thirteensurvey)
+fourteensurvey <- svydesign(data=fourteendata, ids=~1, weights=fourteendata$FINALWT, strata=fourteendata$STRATUM)
+svytotal(~ASSAULTCORR, design=fourteensurvey)
+svytotal(~ASSAULTOTRSTAFFF, design=fourteensurvey)
+```
+
+#Chisq Test of Independence
+```{r}
+sum(thirteendata$TOTALSTAFF-thirteendata$OTHERSTAFF)
+sum(thirteendata$OTHERSTAFF)
+sum(thirteendata$ASSAULTCORR)
+sum(thirteendata$ASSAULTOTRSTAFFF)
+correctional_staff <- c(2854, 85808)
+other_staff <- c(150, 27551)
+chisquared_table <- data.frame(rbind(correctional_staff, other_staff))
+names(chisquared_table) <- c("assault", "no_assault")
+chisquared_table
+chisq.test(chisquared_table)
+```
+
+#Chisq Test of Independence
+```{r}
+emptyvector <- c()
+emptyvector[thirteendata$ADP < 2000] <- "one"
+emptyvector[thirteendata$ADP > 2001 & thirteendata$ADP < 4001] <- "two"
+emptyvector[thirteendata$ADP > 4001] <- "three"
+thirteendata$category <- emptyvector
+gettingvals1 <- thirteendata %>% select(category, ASSAULTCORR, ASSAULTOTRSTAFFF) %>% group_by(category) %>% summarise(sum=sum(ASSAULTCORR), sum2=sum(ASSAULTOTRSTAFFF))
+thirteendata$noassault <- thirteendata$TOTALSTAFF - thirteendata$ASSAULTCORR - thirteendata$ASSAULTOTRSTAFFF
+gettingvals2 <- thirteendata %>% select(noassault, category) %>% group_by(category) %>% summarise(sum=sum(noassault))
+
+assault <- c(1470, 878, 598)
+no_assault <- c(60027, 29406, 20415)
+
+chisquared_table <- data.frame(rbind(assault, no_assault))
+names(chisquared_table) <- c("one", "two", "three")
+chisquared_table
+
+chisq.test(chisquared_table)
+```
+
+#Exploratory Analysis
+```{r}
+staff_data <- total_data %>% select(year, TOTALSTAFF, OTHERSTAFF) %>% group_by(year) %>% summarise_all(funs(sum))
+staff_data
+#reference https://stackoverflow.com/questions/1249548/side-by-side-plots-with-ggplot2
+a <- ggplot(data=staff_data)+geom_line(aes(x = year, y = TOTALSTAFF))+xlab("Year")+ylab("Number of People")+ggtitle("Total Staff Members in Jail 2013-2018")
+
+b <- ggplot(data=staff_data)+geom_line(aes(x = year, y = OTHERSTAFF))+xlab("Year")+ylab("Number of People")+ggtitle("Other Staff Members in Jail 2013-2018")
+
+grid.arrange(a, b)
+assault_data <- thirteen_fourteen_data %>% select(ASSAULTCORR, ASSAULTOTRSTAFFF, DEATHSTAFFYN)
+assault_data$DEATHSTAFFYN[assault_data$DEATHSTAFFYN==-9] <- 0
+summary(assault_data)
+
+assault_data <- thirteen_fourteen_data %>% select(ASSAULTCORR, ASSAULTOTRSTAFFF, DEATHSTAFFYN)
+assault_data$DEATHSTAFFYN[assault_data$DEATHSTAFFYN==-9] <- 0
+assault_data <- assault_data %>% select(ASSAULTCORR, ASSAULTOTRSTAFFF, DEATHSTAFFYN) %>% summarise_all(sum)
+assault_count <- data.frame("Type"=c("Assault on Corr Officers", "Assault on Other", "Deaths by Assaults"), "Count"=c(2526, 88, 836))
+assault_count
+
+ggplot(data=assault_count)+geom_col(aes(x=Type, y=Count))+xlab("Assault Type")+ylab("Number of Cases")+ggtitle("Assaults and Deaths of Staff Members in Jail Facilities in 2013-14")
+
+```
+
+
+
